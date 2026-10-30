@@ -1,24 +1,42 @@
-
 from fastapi import FastAPI
+from app.api.routes import users
+from app.api.routes import health, users
+from app.core.config import settings
+from app.api.routes import auth
+from app.api.routes import health
+
 
 app = FastAPI(
-    title="BuddyPay API",
-    description="AI-powered invoice and payment platform",
-    version="1.0.0"
+    title=settings.APP_NAME,
+    description=(
+        "AI-powered autonomous service procurement "
+        "and conditional payment platform."
+    ),
+    version=settings.APP_VERSION,
+    debug=settings.DEBUG
+)
+
+
+
+app.include_router(
+    health.router,
+    prefix=settings.API_PREFIX
+)
+app.include_router(
+    users.router,
+    prefix=settings.API_PREFIX
+)
+app.include_router(
+    auth.router,
+    prefix=settings.API_PREFIX
 )
 
 
 @app.get("/")
-def root():
+async def root():
     return {
-        "message": "Welcome to BuddyPay API",
-        "status": "running"
-    }
-
-
-@app.get("/health")
-def health_check():
-    return {
-        "status": "healthy",
-        "application": "BuddyPay"
+        "application": settings.APP_NAME,
+        "status": "running",
+        "api_version": settings.APP_VERSION,
+        "documentation": "/docs"
     }

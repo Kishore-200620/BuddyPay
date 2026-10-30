@@ -43,3 +43,6 @@ Thumbs.db
 *.bak
 # Node.js dependencies
 node_modules/
+.env
+.env.*
+!.env.example

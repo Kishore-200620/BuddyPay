@@ -1,4 +1,12 @@
+# Activate Python environment
 .\.venv\Scripts\Activate.ps1
- cd backend
- cd frontend
+
+# Start FastAPI (from project root)
+python -m uvicorn app.main:app --reload --app-dir backend
+
+# Start Next.js (from project root)
+cd frontend
 npm run dev
+
+# Connect to PostgreSQL
+psql -U postgres -h localhost -p 5432 -d postgres
