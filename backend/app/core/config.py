@@ -1,4 +1,10 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+# backend/app/core/config.py -> repository root
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
 class Settings(BaseSettings):
@@ -15,10 +21,23 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
+    # Groq AI configuration
+    GROQ_API_KEY: str
+    GROQ_MODEL: str = "openai/gpt-oss-20b"
+
+    # PayPal Sandbox configuration
+    PAYPAL_CLIENT_ID: str
+    PAYPAL_CLIENT_SECRET: str
+    PAYPAL_BASE_URL: str = "https://api-m.sandbox.paypal.com"
+
+    PAYPAL_US_CLIENT_ID: str
+    PAYPAL_US_CLIENT_SECRET: str
+    PAYPAL_US_BASE_URL: str = "https://api-m.sandbox.paypal.com"
+    PAYPAL_US_WEBHOOK_ID: str | None = None
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=PROJECT_ROOT / ".env",
         env_file_encoding="utf-8",
-        extra="ignore"
+        extra="ignore",
     )
 
 

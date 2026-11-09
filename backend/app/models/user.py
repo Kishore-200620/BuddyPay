@@ -1,8 +1,9 @@
+
 import enum
 from datetime import datetime, timezone
 
 from sqlalchemy import String, DateTime, Enum, Boolean
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 
@@ -52,4 +53,30 @@ class User(Base):
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         nullable=False
+    )
+
+    # Invoices where this user is the buyer.
+    invoices = relationship(
+        "Invoice",
+        back_populates="buyer",
+        foreign_keys="Invoice.buyer_id",
+        cascade="all, delete-orphan"
+    )
+
+    # Invoices where this user is the provider.
+    provider_invoices = relationship(
+        "Invoice",
+        back_populates="provider",
+        foreign_keys="Invoice.provider_id"
+    )
+    buyer_payments = relationship(
+        "Payment",
+        back_populates="buyer",
+        foreign_keys="Payment.buyer_id"
+    )
+
+    provider_payments = relationship(
+        "Payment",
+        back_populates="provider",
+        foreign_keys="Payment.provider_id"
     )

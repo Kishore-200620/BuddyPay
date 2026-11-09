@@ -46,3 +46,11 @@ node_modules/
 .env
 .env.*
 !.env.example
+backend/uploads/
+
+# BuddyPay generated/sample invoice files
+/backend/New folder/
+
+# Python test and runtime artifacts
+backend/__pycache__/
+backend/**/__pycache__/

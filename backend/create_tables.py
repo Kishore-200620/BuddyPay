@@ -1,5 +1,7 @@
+
 from app.core.database import Base, engine
-from app.models import User
+from app.models import User, Invoice
+
 
 def create_tables():
     Base.metadata.create_all(bind=engine)
