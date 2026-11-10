@@ -145,10 +145,28 @@ class Invoice(Base):
     )
 
     payments = relationship(
-    "Payment",
-    back_populates="invoice",
-    foreign_keys="Payment.invoice_id"
-)
+        "Payment",
+        back_populates="invoice",
+        foreign_keys="Payment.invoice_id",
+    )
+
+    currency_groups = relationship(
+        "InvoiceCurrencyGroup",
+        back_populates="invoice",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="InvoiceCurrencyGroup.id",
+    )
+    @property
+    def display_currency(self) -> str | None:
+        """
+        Return the invoice currency for single-currency invoices.
+        Multi-currency invoices must not expose the legacy scalar currency.
+        """
+        if self.currency_groups:
+            return None
+
+        return self.currency
     @property
     def payment_status(self) -> str | None:
         if not self.payments:

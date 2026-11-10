@@ -4,7 +4,6 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import event
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.routes import paypal
@@ -64,13 +63,7 @@ def test_concurrent_invoice_order_creation_postgres(
         fake_create_paypal_us_order,
     )
 
-    # Synchronize the first commit from each independent session.
-    def synchronize_first_commit(session):
-        if not session.info.get("concurrency_test_first_commit"):
-            session.info["concurrency_test_first_commit"] = True
-            barrier.wait(timeout=15)
 
-    event.listen(Session, "before_commit", synchronize_first_commit)
 
     def make_request():
         db = SessionLocal()
@@ -79,6 +72,9 @@ def test_concurrent_invoice_order_creation_postgres(
             buyer = db.get(User, payment_context["buyer_id"])
 
             assert buyer is not None
+
+            # Start both requests together before either acquires the invoice lock.
+            barrier.wait(timeout=15)
 
             try:
                 result = asyncio.run(
@@ -104,16 +100,12 @@ def test_concurrent_invoice_order_creation_postgres(
         finally:
             db.close()
 
-    try:
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            future_one = executor.submit(make_request)
-            future_two = executor.submit(make_request)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        future_one = executor.submit(make_request)
+        future_two = executor.submit(make_request)
 
-            result_one = future_one.result(timeout=30)
-            result_two = future_two.result(timeout=30)
-
-    finally:
-        event.remove(Session, "before_commit", synchronize_first_commit)
+        result_one = future_one.result(timeout=30)
+        result_two = future_two.result(timeout=30)
 
     results = [result_one, result_two]
 

@@ -16,7 +16,7 @@ from app.models.user import User
 from app.models.invoice import Invoice
 from app.models.payment import Payment
 from app.models.paypal_webhook_event import PayPalWebhookEvent
-
+from app.models.invoice_currency_group import InvoiceCurrencyGroup
 
 TEST_DATABASE_NAME = "buddypay_test_db"
 

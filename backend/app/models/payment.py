@@ -41,7 +41,11 @@ class Payment(Base):
         nullable=False,
         index=True
     )
-
+    currency_group_id: Mapped[int | None] = mapped_column(
+        ForeignKey("invoice_currency_groups.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
     buyer_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="RESTRICT"),
         nullable=False,
@@ -101,7 +105,11 @@ class Payment(Base):
         back_populates="payments",
         foreign_keys=[invoice_id]
     )
-
+    currency_group = relationship(
+        "InvoiceCurrencyGroup",
+        back_populates="payments",
+        foreign_keys=[currency_group_id],
+    )
     buyer = relationship(
         "User",
         back_populates="buyer_payments",
@@ -115,23 +123,37 @@ class Payment(Base):
     )
 
     __table_args__ = (
-    Index(
-        "ix_payments_invoice_status",
-        "invoice_id",
-        "status",
-    ),
-    Index(
-        "uq_payments_one_active_per_invoice",
-        "invoice_id",
-        unique=True,
-        postgresql_where=text(
-            "(status = ANY (ARRAY["
-            "'INITIALIZING'::payment_status, "
-            "'CREATED'::payment_status, "
-            "'APPROVED'::payment_status, "
-            "'CAPTURING'::payment_status, "
-            "'PENDING'::payment_status"
-            "]))"
+        Index(
+            "ix_payments_invoice_status",
+            "invoice_id",
+            "status",
         ),
-    ),
-)
+        Index(
+            "uq_payments_one_active_per_invoice",
+            "invoice_id",
+            unique=True,
+            postgresql_where=text(
+                "(currency_group_id IS NULL AND status = ANY (ARRAY["
+                "'INITIALIZING'::payment_status, "
+                "'CREATED'::payment_status, "
+                "'APPROVED'::payment_status, "
+                "'CAPTURING'::payment_status, "
+                "'PENDING'::payment_status"
+                "]))"
+            ),
+        ),
+        Index(
+            "uq_payments_one_active_per_currency_group",
+            "currency_group_id",
+            unique=True,
+            postgresql_where=text(
+                "(currency_group_id IS NOT NULL AND status = ANY (ARRAY["
+                "'INITIALIZING'::payment_status, "
+                "'CREATED'::payment_status, "
+                "'APPROVED'::payment_status, "
+                "'CAPTURING'::payment_status, "
+                "'PENDING'::payment_status"
+                "]))"
+            ),
+        ),
+    )

@@ -54,7 +54,12 @@ async def create_invoice_payment_order(
             detail="US PayPal Sandbox credentials are not configured.",
         )
 
-    invoice = db.get(Invoice, invoice_id)
+    invoice = (
+    db.query(Invoice)
+    .filter(Invoice.id == invoice_id)
+    .with_for_update()
+    .first()
+)
 
     if invoice is None or invoice.buyer_id != current_user.id:
         raise HTTPException(

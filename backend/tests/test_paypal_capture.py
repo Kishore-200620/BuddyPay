@@ -21,7 +21,8 @@ class FakeQuery:
     def filter(self, *conditions, **kwargs):
         self.filters.extend(conditions)
         return self
-
+    def with_for_update(self):
+        return self
     def first(self):
         # Simulate the database filtering by order ID and buyer ID.
         if self.payment is None:
@@ -42,6 +43,9 @@ class FakeDB:
         self.claim_returning_override = None
         self.reservation_update_rowcount_override = None
     def query(self, model):
+        if model.__name__ == "Invoice":
+            return FakeQuery(self.get(model, None))
+
         return FakeQuery(self.payment)
 
     def execute(self, statement):

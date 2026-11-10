@@ -11,7 +11,17 @@ sys.path.insert(0, str(BACKEND_DIR))
 
 # Import the existing database configuration.
 from app.core.database import Base, engine
+from sqlalchemy import create_engine
+from sqlalchemy.engine import make_url
+import os
 
+migration_url = os.getenv("ALEMBIC_DATABASE_URL")
+
+if migration_url:
+    engine = create_engine(
+        make_url(migration_url),
+        pool_pre_ping=True,
+    )
 # Import models so SQLAlchemy registers their tables.
 from app.models import user, invoice, payment, paypal_webhook_event
 
