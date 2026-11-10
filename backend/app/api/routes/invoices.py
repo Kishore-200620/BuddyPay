@@ -74,12 +74,15 @@ async def upload_invoice(
     finally:
         await file.close()
 
+
+
+
 @router.get(
     "/",
     response_model=InvoiceHistoryResponse,
     status_code=status.HTTP_200_OK,
 )
-def get_invoice_history(
+def get_buyer_invoice_history(
     current_user: Annotated[
         User,
         Depends(require_role(UserRole.BUYER))
@@ -88,17 +91,14 @@ def get_invoice_history(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=10, ge=1, le=100),
 ):
-    # Count only invoices belonging to the authenticated buyer.
-    total = (
-        db.query(Invoice)
-        .filter(Invoice.buyer_id == current_user.id)
-        .count()
+    base_query = db.query(Invoice).filter(
+        Invoice.buyer_id == current_user.id
     )
 
-    # Retrieve the requested page, newest invoices first.
+    total = base_query.count()
+
     invoices = (
-        db.query(Invoice)
-        .filter(Invoice.buyer_id == current_user.id)
+        base_query
         .order_by(
             Invoice.created_at.desc(),
             Invoice.id.desc(),
@@ -117,6 +117,48 @@ def get_invoice_history(
         "page_size": page_size,
         "total_pages": total_pages,
     }
+@router.get(
+    "/provider",
+    response_model=InvoiceHistoryResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_provider_invoice_history(
+    current_user: Annotated[
+        User,
+        Depends(require_role(UserRole.PROVIDER))
+    ],
+    db: Session = Depends(get_db),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=10, ge=1, le=100),
+):
+    total = (
+        db.query(Invoice)
+        .filter(Invoice.provider_id == current_user.id)
+        .count()
+    )
+
+    invoices = (
+        db.query(Invoice)
+        .filter(Invoice.provider_id == current_user.id)
+        .order_by(
+            Invoice.created_at.desc(),
+            Invoice.id.desc(),
+        )
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+
+    total_pages = math.ceil(total / page_size) if total else 0
+
+    return {
+        "items": invoices,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+    }
+
 @router.get(
     "/{invoice_id}",
     response_model=InvoiceDetailResponse,

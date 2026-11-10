@@ -1,5 +1,5 @@
 "use client";
-
+import BuddyCave from "@/components/BuddyCave";
 import { useEffect, useState } from "react";
 
 const API_BASE = "http://127.0.0.1:8000/api/v1";
@@ -493,6 +493,12 @@ export default function Home() {
           </section>
         ) : (
           <p className="text-slate-600">Unsupported account role.</p>
+        )}
+        {profile && accessToken && (
+          <BuddyCave
+            accessToken={accessToken}
+            role={profile.role}
+          />
         )}
       </div>
     </main>
