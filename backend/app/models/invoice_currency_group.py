@@ -81,3 +81,40 @@ class InvoiceCurrencyGroup(Base):
             "invoice_id",
         ),
     )
+    @property
+    def payment_status(self) -> str:
+        """
+        Derive this currency group's payment status from its payment records.
+        No separate database column is required.
+        """
+        if not self.payments:
+            return "unpaid"
+
+        statuses = [
+            payment.status.value
+            if hasattr(payment.status, "value")
+            else str(payment.status)
+            for payment in self.payments
+        ]
+
+        if "completed" in statuses:
+            return "completed"
+
+        active_statuses = {
+            "initializing",
+            "created",
+            "approved",
+            "capturing",
+            "pending",
+        }
+
+        if any(status in active_statuses for status in statuses):
+            return "pending"
+
+        if "failed" in statuses:
+            return "failed"
+
+        if "cancelled" in statuses:
+            return "cancelled"
+
+        return "unpaid"

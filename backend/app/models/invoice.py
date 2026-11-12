@@ -169,15 +169,67 @@ class Invoice(Base):
         return self.currency
     @property
     def payment_status(self) -> str | None:
+        """
+        Derive overall invoice payment status.
+
+        For multi-currency invoices:
+        - All groups completed -> completed
+        - At least one completed -> partially_paid
+        - No completed groups, but an active payment exists -> pending
+        - No payment attempts -> unpaid
+        """
+        if self.currency_groups:
+            group_statuses = [
+                group.payment_status
+                for group in self.currency_groups
+            ]
+
+            if all(status == "completed" for status in group_statuses):
+                return "completed"
+
+            if any(status == "completed" for status in group_statuses):
+                return "partially_paid"
+
+            if any(status == "pending" for status in group_statuses):
+                return "pending"
+
+            if any(status == "failed" for status in group_statuses):
+                return "failed"
+
+            if any(status == "cancelled" for status in group_statuses):
+                return "cancelled"
+
+            return "unpaid"
+
+        # Preserve existing scalar-invoice behavior.
         if not self.payments:
             return None
 
-        statuses = [payment.status.value for payment in self.payments]
+        statuses = [
+            payment.status.value
+            if hasattr(payment.status, "value")
+            else str(payment.status)
+            for payment in self.payments
+        ]
 
         if "completed" in statuses:
             return "completed"
 
-        if "created" in statuses or "approved" in statuses:
+        active_statuses = {
+            "initializing",
+            "created",
+            "approved",
+            "capturing",
+            "pending",
+        }
+
+        if any(status in active_statuses for status in statuses):
             return "pending"
 
-        return statuses[-1]
+        if "failed" in statuses:
+            return "failed"
+
+        if "cancelled" in statuses:
+            return "cancelled"
+
+        return None

@@ -1,7 +1,8 @@
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Annotated
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from app.schemas.invoice import InvoiceCurrencyGroupResponse
 from app.models.paypal_webhook_event import PayPalWebhookEvent
 from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
@@ -11,6 +12,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.api.dependencies import require_role
 from app.models.invoice import Invoice
+from app.models.invoice_currency_group import InvoiceCurrencyGroup
 from app.models.payment import Payment, PaymentStatus
 from app.models.user import User, UserRole
 from app.services.paypal_service import (
@@ -47,6 +49,7 @@ async def create_invoice_payment_order(
         User, Depends(require_role(UserRole.BUYER))
     ],
     db: Session = Depends(get_db),
+    currency_group_id: int | None = None,
 ):
     if not settings.PAYPAL_US_CLIENT_ID or not settings.PAYPAL_US_CLIENT_SECRET:
         raise HTTPException(
@@ -73,17 +76,75 @@ async def create_invoice_payment_order(
             detail="Invoice does not have an assigned provider.",
         )
 
-    if invoice.total_amount is None or invoice.total_amount <= Decimal("0"):
+    # Determine whether this invoice uses grouped or scalar finances.
+    currency_groups = getattr(invoice, "currency_groups", None) or []
+    if currency_groups:
+        if currency_group_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Select a currency group before creating a payment.",
+            )
+
+        currency_group = (
+            db.query(InvoiceCurrencyGroup)
+            .filter(
+                InvoiceCurrencyGroup.id == currency_group_id,
+                InvoiceCurrencyGroup.invoice_id == invoice.id,
+            )
+            .first()
+        )
+
+        if currency_group is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Currency group not found for this invoice.",
+            )
+
+        selected_amount = currency_group.total_amount
+        selected_currency = currency_group.currency
+
+    else:
+        if currency_group_id is not None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="This invoice does not contain currency groups.",
+            )
+
+        selected_amount = invoice.total_amount
+        selected_currency = invoice.currency
+
+    # Normalize Decimal values safely. Some test fixtures and legacy
+    # records may supply numeric values as strings.
+    try:
+        amount = Decimal(str(selected_amount))
+    except (InvalidOperation, ValueError, TypeError):
+        amount = Decimal("0")
+
+    if (
+        selected_amount is None
+        or not amount.is_finite()
+        or amount <= Decimal("0")
+    ):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="Invoice must have a valid positive total amount.",
+            detail="Invoice or currency group must have a valid positive total amount.",
         )
+
+    amount = amount.quantize(Decimal("0.01"))
+    currency = selected_currency.upper()
+
+    payment_scope = (
+        Payment.currency_group_id == currency_group_id
+        if currency_group_id is not None
+        else Payment.currency_group_id.is_(None)
+    )
 
     existing_payment = (
         db.query(Payment)
         .filter(
             Payment.invoice_id == invoice.id,
             Payment.buyer_id == current_user.id,
+            payment_scope,
             Payment.status.in_(
                 [
                     PaymentStatus.INITIALIZING,
@@ -104,7 +165,7 @@ async def create_invoice_payment_order(
                 detail="An active payment attempt already exists for this invoice.",
             )
 
-        
+
         # Recover only within the conservative PayPal idempotency window.
         now = datetime.now(timezone.utc)
         lease_cutoff = now - timedelta(minutes=2)
@@ -121,7 +182,7 @@ async def create_invoice_payment_order(
             )
 
         try:
-            
+
             reservation_lease = db.execute(
                 update(Payment)
                 .where(
@@ -171,14 +232,12 @@ async def create_invoice_payment_order(
                 detail="This invoice has already been paid.",
             )
 
-        amount = Decimal(invoice.total_amount).quantize(
-            Decimal("0.01")
-        )
-        currency = invoice.currency.upper()
+
 
         # Reserve the invoice BEFORE contacting PayPal.
         payment = Payment(
             invoice_id=invoice.id,
+            currency_group_id=currency_group_id,
             buyer_id=current_user.id,
             provider_id=invoice.provider_id,
             paypal_order_id=None,
@@ -222,11 +281,15 @@ async def create_invoice_payment_order(
         order = await create_paypal_us_order(
             amount=f"{payment.amount:.2f}",
             currency_code=payment.currency,
-            reference_id=f"invoice-{invoice.id}-buyer-{current_user.id}",
+            reference_id=(
+                f"invoice-{invoice.id}-group-{currency_group_id}-buyer-{current_user.id}"
+                if currency_group_id is not None
+                else f"invoice-{invoice.id}-buyer-{current_user.id}"
+            ),
             request_id=request_id,
         )
 
-    
+
     except ValueError as exc:
         # Only the current reservation owner may mark it FAILED.
         try:
@@ -288,7 +351,7 @@ async def create_invoice_payment_order(
             detail="PayPal did not return an order ID. The payment reservation has been retained.",
         )
 
-    
+
     # Persist the PayPal order only if this worker still owns the reservation.
     try:
         result = db.execute(
@@ -344,6 +407,7 @@ async def create_invoice_payment_order(
     return {
         "payment_id": payment.id,
         "invoice_id": payment.invoice_id,
+        "currency_group_id": getattr(payment, "currency_group_id", None),
         "paypal_order_id": payment.paypal_order_id,
         "amount": str(payment.amount),
         "currency": payment.currency,
@@ -576,7 +640,7 @@ async def capture_invoice_payment_order(
             ),
         ) from db_error
 
-    
+
     try:
         result = await capture_paypal_us_order(order_id)
     except ValueError as exc:

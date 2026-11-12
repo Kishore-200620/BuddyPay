@@ -343,3 +343,114 @@ def test_postgres_concurrent_duplicate_delivery(
 
     finally:
         check_db.close()
+
+def test_postgres_different_event_ids_for_same_capture(
+    db_session,
+    payment_context,
+    verified_signature,
+):
+    payment = create_payment(db_session, payment_context)
+
+    capture_id = "CAPTURE-SAME-RESOURCE-001"
+
+    first_event = make_event(payment.paypal_order_id)
+    first_event["resource"]["id"] = capture_id
+
+    second_event = make_event(payment.paypal_order_id)
+    second_event["resource"]["id"] = capture_id
+
+    first_result = call_webhook(first_event, db_session)
+    second_result = call_webhook(second_event, db_session)
+
+    db_session.refresh(payment)
+
+    assert first_result["processing_status"] == "PROCESSED"
+    assert second_result["processing_status"] == "PROCESSED"
+
+    assert payment.status == PaymentStatus.COMPLETED
+    assert payment.paypal_capture_id == capture_id
+
+    assert db_session.query(PayPalWebhookEvent).filter(
+        PayPalWebhookEvent.event_id.in_(
+            [first_event["id"], second_event["id"]]
+        )
+    ).count() == 2
+
+
+def test_postgres_late_denied_event_does_not_downgrade_completed_capture(
+    db_session,
+    payment_context,
+    verified_signature,
+):
+    payment = create_payment(db_session, payment_context)
+
+    capture_id = "CAPTURE-LATE-DENIED-001"
+
+    completed_event = make_event(payment.paypal_order_id)
+    completed_event["resource"]["id"] = capture_id
+
+    denied_event = make_event(
+        payment.paypal_order_id,
+        event_type="PAYMENT.CAPTURE.DENIED",
+    )
+    denied_event["resource"]["id"] = capture_id
+
+    first_result = call_webhook(completed_event, db_session)
+    second_result = call_webhook(denied_event, db_session)
+
+    db_session.refresh(payment)
+
+    assert first_result["processing_status"] == "PROCESSED"
+    assert second_result["processing_status"] == "IGNORED"
+
+    assert payment.status == PaymentStatus.COMPLETED
+    assert payment.paypal_capture_id == capture_id
+
+
+def test_postgres_failed_payment_is_not_upgraded_by_late_completion(
+    db_session,
+    payment_context,
+    verified_signature,
+):
+    payment = create_payment(db_session, payment_context)
+
+    capture_id = "CAPTURE-FAILED-THEN-COMPLETED"
+
+    payment.status = PaymentStatus.FAILED
+    payment.paypal_capture_id = capture_id
+    db_session.commit()
+
+    completion_event = make_event(payment.paypal_order_id)
+    completion_event["resource"]["id"] = capture_id
+
+    result = call_webhook(completion_event, db_session)
+
+    db_session.refresh(payment)
+
+    assert result["processing_status"] == "IGNORED"
+    assert payment.status == PaymentStatus.FAILED
+    assert payment.paypal_capture_id == capture_id
+
+
+def test_postgres_capture_id_mismatch_is_ignored(
+    db_session,
+    payment_context,
+    verified_signature,
+):
+    payment = create_payment(db_session, payment_context)
+
+    payment.paypal_capture_id = "CAPTURE-ORIGINAL-001"
+    db_session.commit()
+
+    event = make_event(payment.paypal_order_id)
+    event["resource"]["id"] = "CAPTURE-DIFFERENT-002"
+
+    result = call_webhook(event, db_session)
+
+    db_session.refresh(payment)
+
+    assert result["processing_status"] == "IGNORED"
+    assert result["reason"] == "PayPal capture ID mismatch."
+
+    assert payment.status == PaymentStatus.CAPTURING
+    assert payment.paypal_capture_id == "CAPTURE-ORIGINAL-001"

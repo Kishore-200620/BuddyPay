@@ -379,55 +379,7 @@ def process_invoice_extraction(
         invoice.tax_amount = invoice_tax
         invoice.total_amount = invoice_total
         invoice.currency = invoice_currency
-        def _validate_financial_representation_transition(
-            invoice: Invoice,
-            has_incoming_groups: bool,
-        ) -> None:
-            has_existing_groups = bool(invoice.currency_groups)
-            has_payment_history = bool(invoice.payments)
 
-            if (
-                has_payment_history
-                and has_existing_groups != has_incoming_groups
-            ):
-                raise ValueError(
-                    "Cannot change invoice financial representation: "
-                    "payment history exists."
-                )
-        def _validate_scalar_financial_history(
-            invoice: Invoice,
-            subtotal: Decimal | None,
-            tax_amount: Decimal | None,
-            total_amount: Decimal | None,
-            currency: str,
-        ) -> None:
-            """
-            Prevent invoice reprocessing from changing scalar financial
-            information after a payment has been created.
-            """
-
-            if not invoice.payments:
-                return
-
-            existing_values = {
-                "subtotal": invoice.subtotal,
-                "tax_amount": invoice.tax_amount,
-                "total_amount": invoice.total_amount,
-                "currency": invoice.currency,
-            }
-
-            incoming_values = {
-                "subtotal": subtotal,
-                "tax_amount": tax_amount,
-                "total_amount": total_amount,
-                "currency": currency,
-            }
-
-            if existing_values != incoming_values:
-                raise ValueError(
-                    "Cannot modify invoice financial information: "
-                    "payment history exists."
-                )
 
         # Replace groups to avoid duplicates during retries.
         # Synchronize currency groups without damaging payment history.

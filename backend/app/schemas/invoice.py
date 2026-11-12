@@ -30,7 +30,7 @@ class InvoiceCurrencyGroupResponse(BaseModel):
     subtotal: Decimal | None
     tax_amount: Decimal | None
     total_amount: Decimal | None
-
+    payment_status: str = "unpaid"
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -77,3 +77,23 @@ class InvoiceHistoryResponse(BaseModel):
 
 class InvoiceDetailResponse(InvoiceResponse):
     ai_summary: str | None = None
+class ProviderMatchCandidate(BaseModel):
+    id: int
+    full_name: str
+    email: EmailStr
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ProviderMatchResponse(BaseModel):
+    matched: bool
+    provider: ProviderMatchCandidate | None = None
+    message: str
+
+
+class ProviderAssignmentResponse(BaseModel):
+    invoice_id: int
+    provider_id: int
+    provider_name: str
+    provider_email: EmailStr
+    message: str
